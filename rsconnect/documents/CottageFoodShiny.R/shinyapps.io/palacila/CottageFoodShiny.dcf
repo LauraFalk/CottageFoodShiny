@@ -1,0 +1,12 @@
+name: CottageFoodShiny
+title: CottageFoodShiny
+username: palacila
+account: palacila
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 15368280
+bundleId: 10871012
+url: https://palacila.shinyapps.io/CottageFoodShiny/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

@@ -4,331 +4,295 @@ library(DT)
 library(dplyr)
 library(tidyr)
 
-# Define your flow data
+# ---------------------------------------------------
+# CLEAN + EASY-TO-READ DECISION TREE DEFINITION
+# ---------------------------------------------------
 flow <- list(
   q1 = list(
-    question = "Are you an individual selling homemade food?",
-    options = list("Yes" = "q2", "No" = "end_refer")
+    question = "Have you completed food handling training?",
+    options = list("Yes" = "q2", "No" = "end_get_training")
   ),
   q2 = list(
-    question = "Do you have a food handler’s license?",
-    options = list("Yes" = "q3", "No" = "end_food_license")
+    question = "Do you prepare food in a home kitchen?",
+    options = list("Yes" = "q3", "No" = "end_lfm")
   ),
   q3 = list(
-    question = "Do you prepare food in a home kitchen?",
-    options = list("Yes" = "q4", "No" = "end_lfm")
+    question = "Do your products include alcohol, intoxicants, marijuana, raw milk, fish, or shellfish?",
+    options = list("Yes" = "end_lfm", "No" = "q4")
   ),
   q4 = list(
-    question = "Do your products include alcohol, marijuana, raw milk, fish, and/or shellfish?",
-    options = list("Yes" = "end_illegal_products", "No" = "q5")
+    question = "Have you registered with the Arizona Cottage Food Program?",
+    options = list("Yes" = "q5", "No" = "end_register_cfp")
   ),
   q5 = list(
     question = "Is your food Time/Temperature Controlled for Safety (TCS)?",
-    options = list("Yes" = "q6", "No" = "end_sell_anywhere")
+    options = list("Yes" = "q6", "No" = "end_sell_non_tcs")
   ),
   q6 = list(
-    question = "Do you need a HACCP plan?",
-    options = list("Yes" = "q7", "No" = "q7")
-  ),
-  q7 = list(
-    question = "Is it produced in a way that makes it shelf-stable (e.g., canning, drying)?",
-    options = list("Yes" = "end_sell_anywhere", "No" = "end_sell_in_person")
+    question = "Do you want to sell your TCS food in a retail space or through 3rd-party delivery?",
+    options = list("Yes" = "end_lfm", "No" = "end_sell_tcs_direct")
   ),
   
-  # End nodes
-  end_refer = list(
-    question = "Refer to the Pima County Health Department Consumer Health and Food Safety Website.",
+  end_get_training = list(
+    question = "Please complete food handler training or the Certified Food Protection Manager course.",
     options = list()
   ),
-  end_food_license = list(
-    question = "Look into food handling licenses.",
-    options = list()
-  ),
+  
   end_lfm = list(
-    question = "Look into becoming a Limited Food Manufacturer.",
+    question = "You may need to become a Limited Food Manufacturer.",
     options = list()
   ),
-  end_illegal_products = list(
-    question = "You cannot produce food with these ingredients without special licenses. Look into commercial kitchens.",
+  
+  end_register_cfp = list(
+    question = "Register with the Arizona Cottage Food Program.",
     options = list()
   ),
-  end_sell_anywhere = list(
-    question = "✅ You can now sell in person or through a retail space!",
+  
+  end_sell_non_tcs = list(
+    question = "You are ready to sell non-TCS foods at public events, retail spaces, pop-ups, or online in Arizona.",
     options = list()
   ),
-  end_sell_in_person = list(
-    question = "✅ You can now sell, but only in person!",
+  
+  end_sell_tcs_direct = list(
+    question = "You may sell TCS foods in person, at events, or for business meeting delivery (but not via 3rd-party services).",
     options = list()
   )
 )
 
-# Recursive function to generate all paths with Outcome as character scalar
-generate_paths <- function(flow, current_id = "q1", current_path = list()) {
-  node <- flow[[current_id]]
+# ---------------------------------------------------
+# GENERATE ALL POSSIBLE PATHS
+# ---------------------------------------------------
+generate_paths <- function(flow, node_id = "q1", path = list()) {
+  node <- flow[[node_id]]
   
   if (length(node$options) == 0) {
-    current_path[["Outcome"]] <- as.character(node$question)
-    return(list(current_path))
-  } else {
-    all_paths <- list()
-    for (opt in names(node$options)) {
-      next_id <- node$options[[opt]]
-      path_copy <- current_path
-      path_copy[[node$question]] <- opt
-      all_paths <- c(all_paths, generate_paths(flow, next_id, path_copy))
-    }
-    return(all_paths)
+    path$Outcome <- node$question
+    return(list(path))
   }
+  
+  results <- list()
+  for (opt in names(node$options)) {
+    next_id <- node$options[[opt]]
+    new_path <- path
+    new_path[[node$question]] <- opt
+    results <- c(results, generate_paths(flow, next_id, new_path))
+  }
+  results
 }
 
-# Generate all paths
 all_paths <- generate_paths(flow)
 
-# Clean Outcome in all_paths to ensure it's a character scalar
-all_paths_clean <- lapply(all_paths, function(path) {
-  if (is.list(path[["Outcome"]])) {
-    path[["Outcome"]] <- paste(unlist(path[["Outcome"]]), collapse = " ")
-  } else {
-    path[["Outcome"]] <- as.character(path[["Outcome"]])
-  }
-  path
-})
+df_paths <- bind_rows(lapply(all_paths, as.data.frame)) %>%
+  mutate(across(everything(), ~replace_na(as.character(.x), "")))
 
-# Convert to data frame
-df_paths <- bind_rows(lapply(all_paths_clean, function(x) as.data.frame(as.list(x), stringsAsFactors = FALSE)))
+df_consolidated <- tribble(
+  ~Outcome,                                                                 ~`Requires Food Handling Training`, ~`Food prepared in a home kitchen`, ~`Arizona Cottage Food Program Registration`, ~`Products Include Alcohol Intoxicants Marijuana Raw Milk Fish or Shellfish`, ~`Food is Time Temperature Controlled for Safety (TCS)`, ~`TCS Food will be sold a Retail Space or Through 3rd Party Delivery`,
+  "Selling non-TCS foods at public events, retail spaces, pop-ups, or online in Arizona", "Yes", "Yes", "Yes", "No", "No", "",
+  "You may sell TCS foods in person, at events, or for business meeting delivery (but not via 3rd-party services).", "Yes", "Yes", "Yes", "No", "Yes", "No",
+  "You may need to become a Limited Food Manufacturer.", "Yes", "Yes / No", "Yes", "Yes / No", "Yes", "Yes"
+)
 
-# Replace NA with ""
-df_paths[is.na(df_paths)] <- ""
-
-# Ensure all columns are character vectors
-df_paths[] <- lapply(df_paths, as.character)
-
-# Consolidate paths by Outcome: one row per Outcome with merged answers
-df_consolidated <- df_paths %>%
-  group_by(Outcome) %>%
-  summarise(across(everything(), ~ {
-    vals <- unique(.x[.x != ""])
-    if (length(vals) == 0) "" else paste(sort(vals), collapse = " / ")
-  })) %>%
-  ungroup()
-
-colnames(df_consolidated) <- gsub("\\.+", " ", colnames(df_consolidated))
-
+# ---------------------------------------------------
+# UI
+# ---------------------------------------------------
 ui <- fluidPage(
   useShinyjs(),
+  
+  # ------------------- CUSTOM COLORS + FONTS -------------------
   tags$head(
     tags$style(HTML("
+      :root {
+        --color-primary:    #2a4a3a;
+        --color-secondary:  #06968c;
+        --color-accent:     #8dc642;
+        --color-background: #ffffff;
+        --color-text:       #333333;
+        --color-muted:      #666666;
+        --color-light-bg:   #f7f7f7;
+      }
+      
       body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        background-color: #f9f8f6;
-        color: #2e3e28;
+        background-color: var(--color-background);
+        color: var(--color-text);
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        line-height: 1.6;
         margin: 0;
-        padding: 0;
       }
-      .container {
-        background: #ffffff;
-        border-radius: 20px;
-        box-shadow: 0 6px 15px rgba(46, 62, 40, 0.1);
-        padding: 30px 40px;
-        max-width: 900px;
-        margin: 50px auto 70px auto;
+      
+      .main-container {
+        max-width: 800px;
+        margin: 40px auto 60px auto;
+        padding: 0 20px;
       }
-      h1, h2 {
-        color: #3c6644;
-        font-weight: 700;
-        margin-bottom: 20px;
+      
+      h1, h2, h3, h4 {
+        color: var(--color-primary);
+        margin-top: 1.5em;
+        margin-bottom: 0.75em;
+        font-family: 'Helvetica Neue', Arial, sans-serif;
       }
-      h3 {
-        color: #4a6b48;
-        font-weight: 600;
-        margin-bottom: 12px;
+      h1 { font-size: 2.2em; }
+      h3 { font-size: 1.3em; }
+      
+      a, a:visited {
+        color: var(--color-secondary);
+        text-decoration: none;
       }
-      .summary-list {
-        background: #eaf1e7;
-        padding: 15px 20px;
-        border-radius: 12px;
-        margin-top: 30px;
-        font-size: 0.95em;
-        line-height: 1.4;
-      }
-      .summary-list strong {
-        color: #3c6644;
-      }
-      .shiny-input-radiogroup {
-        margin-top: 20px;
-      }
-      .shiny-input-radiogroup > label {
-        display: block;
-        margin-bottom: 12px;
-        font-size: 1.15em;
-        cursor: pointer;
-        transition: color 0.3s ease;
-      }
-      .shiny-input-radiogroup > label:hover {
-        color: #5f7f5a;
-      }
-      input[type='radio'] {
-        transform: scale(1.2);
-        margin-right: 12px;
-        cursor: pointer;
-      }
-      .btn-green {
-        background-color: #3c6644;
-        border-color: #3c6644;
-        color: white;
-        border-radius: 12px;
-        padding: 10px 24px;
-        font-size: 1.1em;
-        font-weight: 600;
-        transition: background-color 0.25s ease, box-shadow 0.25s ease;
-        box-shadow: 0 4px 8px rgba(60, 102, 68, 0.3);
-        cursor: pointer;
-      }
-      .btn-green:hover {
-        background-color: #2e4b33;
-        border-color: #2e4b33;
-        box-shadow: 0 6px 12px rgba(46, 75, 51, 0.5);
-      }
-      .btn-green:disabled, .btn-green.btn-disabled {
-        background-color: #a3b597;
-        border-color: #a3b597;
-        box-shadow: none;
-        cursor: not-allowed;
-        opacity: 0.7;
-      }
-      .button-row {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 30px;
-      }
-      .link-button {
-        margin-top: 25px;
-        font-size: 1em;
-        color: #3c6644;
-        cursor: pointer;
+      a:hover {
         text-decoration: underline;
       }
-      .link-button:hover {
-        color: #2e4b33;
+      
+      .btn-custom {
+        background-color: var(--color-primary);
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 1em;
       }
-      /* Smaller font and wide container for data table */
-      table.dataTable {
-        font-size: 0.85em !important;
+      .btn-custom:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
       }
-      div.dataTables_wrapper {
+      
+      .summary-box {
+        background-color: var(--color-light-bg);
+        border-left: 4px solid var(--color-primary);
+        padding: 15px 20px;
+        margin-top: 30px;
+      }
+      .summary-box strong {
+        color: var(--color-primary);
+      }
+      
+      .dataTables_wrapper {
         width: 100%;
-        overflow-x: auto !important;
+        overflow-x: auto;
       }
     "))
   ),
+  # --------------------------------------------------------------
   
-  titlePanel(h1("Food Business Decision Helper")),
-  
-  tabsetPanel(
-    id = "tabs",
-    
-    tabPanel("Decision Helper",
-             div(class = "container",
+  div(class = "main-container",
+      
+      h1("Food Business Decision Helper"),
+      
+      tabsetPanel(
+        id = "tabs",
+        
+        tabPanel("Interactive Guide",
                  uiOutput("questionUI"),
-                 div(class = "button-row",
-                     actionButton("back", "← Back", class = "btn-green"),
-                     actionButton("reset", "🔄 Start Over", class = "btn-green")
+                 br(),
+                 fluidRow(
+                   column(6, actionButton("back", "← Back", class = "btn-custom")),
+                   column(6, actionButton("reset", "Start Over", class = "btn-custom"))
                  ),
-                 div(
-                   "View full decision tree as table",
-                   id = "toTableLink",
-                   class = "link-button"
-                 ),
-                 uiOutput("summaryUI")
-             )
-    ),
-    
-    tabPanel("Full Decision Tree",
-             div(class = "container",
-                 DTOutput("flowTable")
-             )
-    )
+                 uiOutput("summaryUI"),
+                 br(),
+                 actionLink("toTable", "View Summary Table")
+        ),
+        
+        tabPanel("Summary Table",
+                 DTOutput("flowTable"))
+      )
   )
 )
 
+# ---------------------------------------------------
+# SERVER
+# ---------------------------------------------------
 server <- function(input, output, session) {
-  history <- reactiveValues(stack = c("q1"))
+  
+  history <- reactiveValues(stack = "q1")
   answers <- reactiveValues(vals = list())
   
-  current_question <- reactive({
+  currentQ <- reactive({
     tail(history$stack, 1)
   })
   
   observeEvent(input$reset, {
-    history$stack <- c("q1")
+    history$stack <- "q1"
     answers$vals <- list()
     updateRadioButtons(session, "answer", selected = character(0))
   })
   
   observeEvent(input$back, {
     if (length(history$stack) > 1) {
-      last_q <- tail(history$stack, 1)
+      last <- tail(history$stack, 1)
       history$stack <- head(history$stack, -1)
-      answers$vals[[last_q]] <- NULL
+      answers$vals[[last]] <- NULL
       updateRadioButtons(session, "answer", selected = character(0))
     }
   })
   
   observeEvent(input$answer, {
     req(input$answer)
-    curr <- current_question()
+    
+    curr <- currentQ()
     answers$vals[[curr]] <- input$answer
-    next_q <- flow[[curr]]$options[[input$answer]]
-    history$stack <- c(history$stack, next_q)
+    
+    next_id <- flow[[curr]]$options[[input$answer]]
+    history$stack <- c(history$stack, next_id)
+    
     updateRadioButtons(session, "answer", selected = character(0))
   })
   
   output$questionUI <- renderUI({
-    qid <- current_question()
-    q <- flow[[qid]]
+    qid <- currentQ()
+    node <- flow[[qid]]
     
-    if (length(q$options) == 0) {
-      h3(q$question)
+    if (length(node$options) == 0) {
+      h3(node$question)
     } else {
-      radioButtons("answer", q$question, choices = names(q$options))
+      radioButtons("answer",
+                   label = node$question,
+                   choices = names(node$options),
+                   selected = character(0))
     }
   })
   
   output$summaryUI <- renderUI({
     if (length(history$stack) <= 1) return(NULL)
     
-    summary_items <- lapply(head(history$stack, -1), function(qid) {
-      question_text <- flow[[qid]]$question
-      answer_text <- answers$vals[[qid]]
-      if (is.null(answer_text)) answer_text <- ""
-      div(
-        tags$strong(question_text),
-        tags$span(paste0(": ", answer_text)),
-        style = "margin-bottom: 8px;"
-      )
-    })
-    
-    div(class = "summary-list",
+    div(class = "summary-box",
         h4("Your Choices So Far:"),
-        summary_items
+        lapply(head(history$stack, -1), function(qid) {
+          question <- flow[[qid]]$question
+          ans <- answers$vals[[qid]]
+          div(strong(question), paste(": ", ans))
+        })
     )
   })
-  
   output$flowTable <- renderDT({
     datatable(
       df_consolidated,
-      options = list(pageLength = 10, lengthChange = TRUE, scrollX = TRUE),
       rownames = FALSE,
-      filter = 'top'
-    )
+      filter = "none",
+      escape = FALSE,   # allow HTML
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        dom = "tip",
+        autoWidth = TRUE
+      )
+    ) %>%
+      formatStyle(
+        columns = colnames(df_consolidated)[-1],  # all except Outcome
+        valueColumns = colnames(df_consolidated)[-1],
+        backgroundColor = styleEqual(
+          c("Yes", "No", "Yes / No", ""), 
+          c("#d4edda", "#f8d7da", "#fff3cd", NA)  # green / red / yellow / blank
+        )
+      )
+  })
+  
+  observeEvent(input$toTable, {
+    updateTabsetPanel(session, "tabs", selected = "Full Decision Tree")
   })
   
   observe({
     shinyjs::toggleState("back", condition = length(history$stack) > 1)
-  })
-  
-  observeEvent(input$toTableLink, {
-    updateTabsetPanel(session, "tabs", selected = "Full Decision Tree")
   })
 }
 
